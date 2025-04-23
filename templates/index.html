@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text Summarizer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .summary-type {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .summary-type button {
+            flex: 1;
+            background-color: #2196F3;
+        }
+        .summary-type button.active {
+            background-color: #0b7dda;
+        }
+        .result-container {
+            margin-top: 20px;
+        }
+        .result-box {
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            margin-bottom: 15px;
+        }
+        .result-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        #originalText {
+            white-space: pre-wrap;
+        }
+        #result {
+            white-space: pre-wrap;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .source-info {
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 5px;
+        }
+        .url-display {
+            word-break: break-all;
+            color: #2196F3;
+        }
+        .icon-button {
+            background: none;
+            border: none;
+            padding: 5px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .icon-button img {
+            width: 24px;
+            height: 24px;
+        }
+        .icon-button.active {
+            background-color: #e3f2fd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Text Summarizer</h1>
+        <textarea id="inputText" placeholder="Enter your text here or select text from a webpage and use the extension..."></textarea>
+        
+        <div class="summary-type">
+            <button class="icon-button" onclick="changeSummaryType('paragraph')" title="Single Paragraph">
+                <img src="/Icons/paragraph.png" alt="Single Paragraph">
+            </button>
+            <button class="icon-button" onclick="changeSummaryType('two_paragraph')" title="Two Paragraphs">
+                <img src="/Icons/two-paragraph.png" alt="Two Paragraphs">
+            </button>
+            <button class="icon-button" onclick="changeSummaryType('paragraph_bullet')" title="Paragraph + Bullets">
+                <img src="/Icons/paragrah-bullet.png" alt="Paragraph + Bullets">
+            </button>
+            <button class="icon-button" onclick="changeSummaryType('bullet')" title="Bullet Points">
+                <img src="/Icons/bullet.png" alt="Bullet Points">
+            </button>
+        </div>
+        
+        <div class="button-group">
+            <button onclick="summarize()">Summarize</button>
+            <button onclick="clearText()" style="background-color: #f44336;">Clear</button>
+        </div>
+        
+        <div class="loading" id="loading">
+            Summarizing... Please wait...
+        </div>
+        
+        <div class="result-container">
+            <div class="result-box">
+                <div class="result-title">Original Text:</div>
+                <div id="originalText"></div>
+                <div class="source-info" id="sourceInfo">
+                    Source: <span class="url-display" id="sourceUrl"></span>
+                </div>
+            </div>
+            <div class="result-box">
+                <div class="result-title">Summary:</div>
+                <div id="result"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentType = 'paragraph';
+        let currentText = '';
+        
+        // Function to handle summarize_text() call from Chrome extension
+        window.summarize_text = function(text, url) {
+            currentText = text;
+            document.getElementById('inputText').value = text;
+            document.getElementById('originalText').textContent = text;
+            if (url) {
+                document.getElementById('sourceUrl').textContent = url;
+                document.getElementById('sourceInfo').style.display = 'block';
+            }
+            summarize();
+        };
+        
+        function changeSummaryType(type) {
+            currentType = type;
+            // Update button styles
+            document.querySelectorAll('.icon-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.closest('.icon-button').classList.add('active');
+            
+            // If we have text, summarize with new type
+            if (currentText) {
+                summarize();
+            }
+        }
+        
+        async function summarize() {
+            const text = document.getElementById('inputText').value;
+            if (!text.trim()) {
+                alert('Please enter some text to summarize');
+                return;
+            }
+            
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+            
+            loading.style.display = 'block';
+            
+            try {
+                const response = await fetch('/summarize', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        text: text,
+                        type: currentType
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    result.textContent = data.summary;
+                } else {
+                    result.textContent = 'Error: ' + data.error;
+                }
+            } catch (error) {
+                result.textContent = 'Error: ' + error.message;
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+        
+        function clearText() {
+            document.getElementById('inputText').value = '';
+            document.getElementById('result').textContent = '';
+            document.getElementById('originalText').textContent = '';
+            document.getElementById('sourceUrl').textContent = '';
+            document.getElementById('sourceInfo').style.display = 'none';
+            currentText = '';
+        }
+        
+        // Set initial active button
+        document.querySelector('.icon-button').classList.add('active');
+    </script>
+</body>
+</html> 
