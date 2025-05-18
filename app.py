@@ -4,9 +4,9 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import os
 from dotenv import load_dotenv
-import requests
-import hashlib
+import google.generativeai as genai
 from datetime import datetime, timedelta
+import hashlib
 import json
 
 # Load environment variables from .env file
@@ -15,21 +15,20 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# Initialize rate limiter
+# Initialize rate limiter with in-memory storage (for development)
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
     default_limits=["200 per day", "50 per hour"]
 )
 
-# Hugging Face API configuration
-API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
-HF_API_KEY = os.getenv('HF_API_KEY')
+# Configure Gemini API
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY environment variable is not set. Please create a .env file with your Gemini API key.")
 
-if not HF_API_KEY:
-    raise ValueError("HF_API_KEY environment variable is not set. Please create a .env file with your Hugging Face API key.")
-
-headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('models/gemini-1.5-pro-latest')
 
 # In-memory cache with expiration
 cache = {}
@@ -56,26 +55,49 @@ def cache_summary(text, summary_type, summary):
         'timestamp': datetime.now()
     }
 
-def query(payload):
-    """Make API request with error handling"""
+def generate_summary(text, prompt):
+    """Generate summary using Gemini API"""
     try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
-        response.raise_for_status()
-        
-        # Check if model is loading
-        if isinstance(response.json(), list) and len(response.json()) > 0:
-            return response.json()
-        else:
-            raise Exception("Model is still loading. Please try again in a few seconds.")
-            
-    except requests.exceptions.Timeout:
-        raise Exception("Request timed out. Please try again.")
-    except requests.exceptions.RequestException as e:
-        raise Exception(f"API request failed: {str(e)}")
-    except json.JSONDecodeError:
-        raise Exception("Invalid response from API")
+        response = model.generate_content(prompt + "\n\nText to summarize:\n" + text)
+        return response.text
     except Exception as e:
-        raise Exception(f"Error processing API response: {str(e)}")
+        raise Exception(f"Error generating summary: {str(e)}")
+
+def generate_paragraph_summary(text):
+    prompt = """Summarize the following large text into a well-structured paragraph. 
+    Focus on the main points and key information. 
+    Make it concise but comprehensive. 
+    Use clear and professional language."""
+    return generate_summary(text, prompt)
+
+def generate_two_paragraph_summary(text):
+    prompt = """Summarize the following large text into two well-structured paragraphs.
+    First paragraph should focus on the main points and key information.
+    Second paragraph should cover supporting details and additional context.
+    Use clear and professional language."""
+    return generate_summary(text, prompt)
+
+def generate_paragraph_bullet_summary(text):
+    prompt = """Summarize the following large text into a small well-structured paragraph and 3 bullet points.
+    The paragraph should cover the main points and key information.
+    The bullet points should highlight specific details or important aspects.
+    Use clear and professional language.
+    Format the output as:
+    [Paragraph text]
+
+    • [First bullet point]
+    • [Second bullet point]
+    • [Third bullet point]"""
+    return generate_summary(text, prompt)
+
+def generate_bullet_summary(text):
+    prompt = """Summarize the following large text into a maximum of 15 bullet points.
+    Focus on the most important information and key details.
+    Each bullet point should be concise but informative.
+    Use clear and professional language.
+    The number of bullet points should be according to the length of the text and should cover all the important information.
+    Format each point with a bullet point (•) symbol."""
+    return generate_summary(text, prompt)
 
 @app.route('/')
 def index():
@@ -126,99 +148,5 @@ def summarize_text():
         app.logger.error(f"Error in summarize_text: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-def generate_paragraph_summary(text):
-    output = query({
-        "inputs": text,
-        "parameters": {
-            "max_length": 130,
-            "min_length": 30,
-            "do_sample": False
-        }
-    })
-    return output[0]['summary_text']
-
-def generate_two_paragraph_summary(text):
-    # First paragraph - focus on main points
-    first_output = query({
-        "inputs": text,
-        "parameters": {
-            "max_length": 100,
-            "min_length": 50,
-            "do_sample": False
-        }
-    })
-    first_para = first_output[0]['summary_text']
-    
-    # Second paragraph - focus on supporting details
-    second_output = query({
-        "inputs": text,
-        "parameters": {
-            "max_length": 100,
-            "min_length": 50,
-            "do_sample": True  # Use sampling to get different content
-        }
-    })
-    second_para = second_output[0]['summary_text']
-    
-    return f"{first_para}\n\n{second_para}"
-
-def generate_paragraph_bullet_summary(text):
-    # Generate paragraph focusing on main points
-    para_output = query({
-        "inputs": text,
-        "parameters": {
-            "max_length": 100,
-            "min_length": 50,
-            "do_sample": False
-        }
-    })
-    para_summary = para_output[0]['summary_text']
-    
-    # Generate bullet points focusing on key details
-    bullet_output = query({
-        "inputs": text,
-        "parameters": {
-            "max_length": 150,
-            "min_length": 50,
-            "do_sample": True  # Use sampling to get different content
-        }
-    })
-    bullet_text = bullet_output[0]['summary_text']
-    # Convert to bullet points and ensure they're different from paragraph
-    bullet_points = []
-    for point in bullet_text.split('.'):
-        point = point.strip()
-        if point and point not in para_summary:  # Only add points not in paragraph
-            bullet_points.append('• ' + point)
-    
-    # If we don't have enough distinct bullet points, generate more
-    if len(bullet_points) < 3:
-        additional_output = query({
-            "inputs": text,
-            "parameters": {
-                "max_length": 100,
-                "min_length": 30,
-                "do_sample": True
-            }
-        })
-        additional_points = ['• ' + point.strip() for point in additional_output[0]['summary_text'].split('.') 
-                           if point.strip() and point.strip() not in para_summary]
-        bullet_points.extend(additional_points)
-    
-    return f"{para_summary}\n\n" + '\n'.join(bullet_points[:5])  # Limit to 5 bullet points
-
-def generate_bullet_summary(text):
-    output = query({
-        "inputs": text,
-        "parameters": {
-            "max_length": 150,
-            "min_length": 50,
-            "do_sample": False
-        }
-    })
-    bullet_text = output[0]['summary_text']
-    bullet_points = ['• ' + point.strip() for point in bullet_text.split('.') if point.strip()]
-    return '\n'.join(bullet_points[:5])  # Limit to 5 bullet points
-
 if __name__ == '__main__':
-    app.run(debug=True) 
+    app.run(host='0.0.0.0', port=5001, debug=True) 
