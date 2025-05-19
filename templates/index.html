@@ -456,14 +456,15 @@
 
         <div class="ad-container">
             <!-- AdSense Ad Unit -->
+            <!-- Ad 1 -->
             <ins class="adsbygoogle"
-                 style="display:block"
-                 data-ad-client="YOUR-ADSENSE-CLIENT-ID"
-                 data-ad-slot="YOUR-AD-SLOT-ID"
-                 data-ad-format="auto"
-                 data-full-width-responsive="true"></ins>
+                style="display:block"
+                data-ad-client="ca-pub-7414070374243315"
+                data-ad-slot="3244125291"
+                data-ad-format="auto"
+                data-full-width-responsive="true"></ins>
             <script>
-                 (adsbygoogle = window.adsbygoogle || []).push({});
+                (adsbygoogle = window.adsbygoogle || []).push({});
             </script>
         </div>
     </div>
@@ -491,6 +492,7 @@
             const result = document.getElementById('result');
             
             loading.style.display = 'block';
+            result.textContent = ''; // Clear previous result
             
             try {
                 const response = await fetch('/summarize', {
@@ -508,10 +510,22 @@
                 if (response.ok) {
                     result.textContent = data.summary;
                 } else {
-                    result.textContent = 'Error: ' + data.error;
+                    let errorMessage = data.error;
+                    if (response.status === 429) {
+                        errorMessage = 'Rate limit exceeded. Please try again later or upgrade your plan.';
+                    } else if (response.status === 400) {
+                        errorMessage = 'Invalid request. Please check your input text.';
+                    } else if (response.status === 401) {
+                        errorMessage = 'API configuration error. Please contact support.';
+                    }
+                    result.innerHTML = `<div style="color: #ef4444; padding: 1rem; background: #fee2e2; border-radius: 0.5rem; margin-top: 1rem;">
+                        <i class="fas fa-exclamation-circle"></i> ${errorMessage}
+                    </div>`;
                 }
             } catch (error) {
-                result.textContent = 'Error: ' + error.message;
+                result.innerHTML = `<div style="color: #ef4444; padding: 1rem; background: #fee2e2; border-radius: 0.5rem; margin-top: 1rem;">
+                    <i class="fas fa-exclamation-circle"></i> Network error. Please check your internet connection and try again.
+                </div>`;
             } finally {
                 loading.style.display = 'none';
             }

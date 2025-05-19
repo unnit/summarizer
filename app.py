@@ -19,7 +19,8 @@ CORS(app)
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"]
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"
 )
 
 # Configure Gemini API
@@ -28,7 +29,7 @@ if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY environment variable is not set. Please create a .env file with your Gemini API key.")
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('models/gemini-1.5-pro-latest')
+model = genai.GenerativeModel('models/gemini-2.0-flash')
 
 # In-memory cache with expiration
 cache = {}
@@ -61,7 +62,14 @@ def generate_summary(text, prompt):
         response = model.generate_content(prompt + "\n\nText to summarize:\n" + text)
         return response.text
     except Exception as e:
-        raise Exception(f"Error generating summary: {str(e)}")
+        if "429" in str(e):
+            raise Exception("API rate limit exceeded. Please try again later or upgrade your plan.")
+        elif "400" in str(e):
+            raise Exception("Invalid request. Please check your input text.")
+        elif "401" in str(e):
+            raise Exception("API key is invalid or expired. Please check your configuration.")
+        else:
+            raise Exception(f"Error generating summary: {str(e)}")
 
 def generate_paragraph_summary(text):
     prompt = """Summarize the following large text into a well-structured paragraph. 
@@ -146,7 +154,15 @@ def summarize_text():
         
     except Exception as e:
         app.logger.error(f"Error in summarize_text: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        error_message = str(e)
+        if "rate limit" in error_message.lower():
+            return jsonify({'error': 'API rate limit exceeded. Please try again later or upgrade your plan.'}), 429
+        elif "invalid request" in error_message.lower():
+            return jsonify({'error': 'Invalid request. Please check your input text.'}), 400
+        elif "api key" in error_message.lower():
+            return jsonify({'error': 'API key is invalid or expired. Please check your configuration.'}), 401
+        else:
+            return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True) 
