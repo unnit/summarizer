@@ -1,4 +1,4 @@
-name: Deploy Summarizer App to EC2
+name: Deploy Summarizer App to Lightsail
 
 on:
   push:
@@ -19,12 +19,12 @@ jobs:
 
     - name: Copy files to EC2 using rsync (exclude .git and .github)
       run: |
-        rsync -avz --exclude='.git' --exclude='.github' -e "ssh -o StrictHostKeyChecking=no" ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ec2-user/${{ secrets.APP_NAME }}/
+        rsync -avz --exclude='.git' --exclude='.github' -e "ssh -o StrictHostKeyChecking=no" ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/ubuntu/${{ secrets.APP_NAME }}/
 
     - name: Build and restart Docker container on EC2
       run: |
         ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
-          cd /home/ec2-user/${{ secrets.APP_NAME }}
+          cd /home/ubuntu/${{ secrets.APP_NAME }}
           docker stop summarizer || true
           docker rm summarizer || true
           docker build -t summarizer .
