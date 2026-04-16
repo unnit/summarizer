@@ -29,7 +29,7 @@ if not GEMINI_API_KEY:
     raise ValueError("Error env")
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('models/gemini-2.0-flash')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 # In-memory cache with expiration
 cache = {}
@@ -62,6 +62,7 @@ def generate_summary(text, prompt):
         response = model.generate_content(prompt + "\n\nText to summarize:\n" + text)
         return response.text
     except Exception as e:
+        print(e)
         if "429" in str(e):
             raise Exception("Error generating summary")
         elif "400" in str(e):
